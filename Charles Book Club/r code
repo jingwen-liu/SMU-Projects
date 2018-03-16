@@ -1,0 +1,256 @@
+---
+title: "ITOM 6253 Homework 4"
+author: "Jingwen Liu 47422171"
+date: "November 29, 2017"
+output: 
+   html_document: default
+---
+
+```{r, echo=FALSE}
+suppressPackageStartupMessages(library(dplyr)) # for data manipulation
+suppressPackageStartupMessages(library(car))
+suppressPackageStartupMessages(library(bindrcpp)) 
+suppressPackageStartupMessages(library(outliers)) 
+suppressPackageStartupMessages(library(psych)) 
+suppressPackageStartupMessages(library(zoo)) 
+suppressPackageStartupMessages(library(ggplot2)) 
+
+#import csv
+cbc <- read.csv("Charles_BookClub_modified.csv", fileEncoding="UTF-8-BOM", header=TRUE, sep = ",")
+
+#check data
+#tail(cbc)
+
+#remove empty rows
+cbc <- cbc[-2002,]
+cbc <- cbc[-2001,]
+```
+
+
+Number of observations of original data
+```{r,  echo=FALSE}
+
+totalrow <- nrow(cbc)
+print(totalrow)
+```
+variable and type
+```{r,  echo=FALSE}
+#2
+print(sapply(cbc, class))
+```
+
+
+remove rows that have no books purchased; number of observation of new data
+```{r,  echo=FALSE}
+#3
+#remove rows that have no books purchased (including Florence)
+cbc_c <- cbc[apply(cbc[c(8:18)],1,function(cbc) any(cbc!=0)),]
+
+#check new data
+#head(cbc_c,10)
+#tail(cbc_c)
+
+#number of observation of new data
+totalrow2 <- nrow(cbc_c)
+print(totalrow2)
+
+#number of observation of rows that have no books
+nobook <- totalrow - totalrow2
+print(nobook)
+```
+
+
+```{r,  echo=FALSE}
+#4 Recode the gender variable as a factor 
+
+#recode gender variable
+cbc_c$Gender<- factor(cbc_c$Gender, levels = c(0,1), labels = c("F", "M"))
+
+#check new data
+#head(cbc_c)
+```
+
+
+```{r,  echo=FALSE}
+#5. Recode Florence variable as a factor with two levels: 
+cbc_c$Florence<- factor(cbc_c$Florence, levels = c(0,1), labels = c("No", "Yes"))
+
+#check new data
+head(cbc_c)
+```
+
+
+Four moments of each numeric variable
+```{r,  echo=FALSE}
+#6
+#import moments
+library(moments)
+
+#import plyr
+library(dplyr)
+
+#change Seq and ID to character
+cbc_c$Seq <- as.character(cbc_c$Seq)
+cbc_c$ID <- as.character(cbc_c$ID)
+
+#check new data type
+class(cbc_c$Seq)
+class(cbc_c$ID)
+
+#find numeric values
+#cbc_nums <- cbc_c[, 4:17]
+nums <- sapply(cbc_c, is.numeric)
+cbc_nums <- cbc_c[, nums]
+
+#check data
+head(cbc_nums)
+
+#4 moments
+summarise_all(cbc_nums, funs(mean,sd,skewness,kurtosis), na.rm = TRUE)
+```
+
+
+```{r,  echo=FALSE}
+#8. Change outliers to missing values
+##Change outliers to NA
+#by looking at the data, monetary values cant be negative, thus outliers
+cbc_c$M[cbc_c$M < 0] <- NA
+
+#check new missing data
+#head(cbc_c, 10)
+```
+
+
+Missing value count
+```{r,  echo=FALSE}
+#Count missing values and report the counts for each variable that has missing values
+#missing values
+na_count <- apply(is.na(cbc_nums),2,sum)
+
+print(na_count)
+```
+
+
+```{r,  echo=FALSE}
+#10 Impute the missing values using mean substitution
+
+#aggregate numeric values
+nums <- sapply(cbc_c, is.numeric)
+cbc_nums <- cbc_c[, nums]
+cbc_nums <- na.aggregate(cbc_nums)
+
+#impute missing values
+NA2mean <- function(cbc_nums) replace(cbc_nums, is.na(cbc_nums), mean(cbc_nums, na.rm = TRUE))
+cbc_nums <- replace(cbc_nums, TRUE, lapply(cbc_nums, NA2mean))
+cbc_nums[] <- lapply(cbc_nums, NA2mean)
+
+#join with other categorical values
+cbc_c <- cbind(cbc_c[1:3], cbc_nums, cbc_c[18])
+
+#check imputed data
+#head(cbc_c, 10)
+```
+
+
+Histogram of the continuous variables
+```{r,  echo=FALSE}
+#11
+##draw a histogram
+library(reshape2)
+library(ggplot2)
+d <- melt(cbc_c[,c(4:17)])
+ggplot(d,aes(x = value)) + 
+    facet_wrap(~variable,scales = "free_x") + 
+    geom_histogram()+
+    ggtitle("Histogram")
+```
+
+
+Bar chart for the counts of each of the ten book purchase
+```{r,  echo=FALSE}
+#12
+name <- names(cbc_c)[8:17]
+value <- c(sum(cbc_c[,8]),sum(cbc_c[,9]),sum(cbc_c[,10]),sum(cbc_c[,11]),sum(cbc_c[,12]),sum(cbc_c[,13]),sum(cbc_c[,14]),sum(cbc_c[,15]),sum(cbc_c[,16]),sum(cbc_c[,17]))
+barplot(value,names.arg = name,angle = 135)
+```
+
+
+Nine categories of RFM where each category is composed of combinations of values of "High", "Medium" and "Low" for R, F, and M
+```{r,  echo=FALSE}
+#13
+#divide each of these three variables into thirds
+quanR <- quantile(cbc_c$R,c(0.33,0.66),na.rm = TRUE)
+quanF <- quantile(cbc_c$F,c(0.33,0.66),na.rm = TRUE)
+
+RhighFhigh <- filter(cbc_c,R>quanR[2],F>quanF[2])
+RhighFhigh <- mutate(RhighFhigh,Rlevel = 'high',Flevel ='high')
+
+RhighFmiddle <- filter(cbc_c,R>quanR[2],F<quanF[2]|F>quanF[1])
+RhighFmiddle <- mutate(RhighFmiddle,Rlevel = 'high',Flevel ='middle')
+
+RhighFlow <- filter(cbc_c,R>quanR[2],F<quanF[1])
+RhighFlow <- mutate(RhighFlow,Rlevel = 'high',Flevel ='low')
+
+RmiddleFhigh <- filter(cbc_c,R<quanR[2]|R>quanR[1],F>quanF[2])
+RmiddleFhigh <- mutate(RmiddleFhigh,Rlevel = 'middle',Flevel ='high')
+
+RmiddleFmiddle <- filter(cbc_c,R<quanR[2]|R>quanR[1],F<quanF[2]|F>quanF[1])
+RmiddleFmiddle <- mutate(RmiddleFmiddle,Rlevel = 'middle',Flevel ='middle')
+
+RmiddleFlow <- filter(cbc_c,R<quanR[2]|R>quanR[1],F<quanF[1])
+RmiddleFlow <- mutate(RmiddleFlow,Rlevel = 'middle',Flevel ='low')
+
+RlowFhigh <- filter(cbc_c,R<quanR[1],F>quanF[2])
+RlowFhigh <- mutate(RmiddleFhigh,Rlevel = 'low',Flevel ='high')
+
+RlowFmiddle <- filter(cbc_c,R<quanR[1],F<quanF[2]|F>quanF[1])
+RlowFmiddle <- mutate(RmiddleFmiddle,Rlevel = 'low',Flevel ='middle')
+
+RlowFlow <- filter(cbc_c,R<quanR[1],F<quanF[1])
+RlowFlow <- mutate(RmiddleFlow,Rlevel = 'low',Flevel ='low')
+
+par(mfrow=c(3,3))
+hist(RhighFhigh$M,main = 'Total money spent on CBC books for high F and high M')
+hist(RhighFmiddle$M,main = 'Total money spent on CBC books for high F and middle M')
+hist(RhighFlow$M,main = 'Total money spent on CBC books for high F and low M')
+hist(RmiddleFhigh$M,main = 'Total money spent on CBC books for middle F and high M')
+hist(RmiddleFmiddle$M,main = 'Total money spent on CBC books for middle F and middle M')
+hist(RmiddleFlow$M,main = 'Total money spent on CBC books for middle F and low M')
+hist(RlowFhigh$M,main = 'Total money spent on CBC books for low F and high M')
+hist(RlowFmiddle$M,main = 'Total money spent on CBC books for low F and middle M')
+hist(RlowFlow$M,main = 'Total money spent on CBC books for low F and low M')
+```
+
+
+3X3 matrix using boxplots 
+```{r,  echo=FALSE}
+#14
+par(mfrow=c(3,3))
+boxplot(RhighFhigh$M,main = 'Total money spent on CBC books for high F and high M')
+boxplot(RhighFmiddle$M,main = 'Total money spent on CBC books for high F and middle M')
+boxplot(RhighFlow$M,main = 'Total money spent on CBC books for high F and low M')
+boxplot(RmiddleFhigh$M,main = 'Total money spent on CBC books for middle F and high M')
+boxplot(RmiddleFmiddle$M,main = 'Total money spent on CBC books for middle F and middle M')
+boxplot(RmiddleFlow$M,main = 'Total money spent on CBC books for middle F and low M')
+boxplot(RlowFhigh$M,main = 'Total money spent on CBC books for low F and high M')
+boxplot(RlowFmiddle$M,main = 'Total money spent on CBC books for low F and middle M')
+boxplot(RlowFlow$M,main = 'Total money spent on CBC books for low F and low M')
+```
+
+
+Median monetary value per visit by gender: male and female
+```{r,  echo=FALSE}
+#15
+male <- subset(cbc_c,Gender == 'M')
+female <- subset(cbc_c,Gender == 'F')
+
+print(median(male$M))
+print(median(female$M))
+```
+
+
+Bubble plot of recency on the x-axis, monetary value on the y-axis, where the size of the points are proportional to first purchase and the points are colored by gender.
+```{r,  echo=FALSE} 
+#16
+ggplot(cbc_c,aes(x=R,y=M))+geom_point(aes(size = F,colour = Gender))
+```
