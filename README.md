@@ -1,1 +1,1 @@
-Manipulation and visualization to explore data set in R
+Manipulation and visualization to explore data sets in R and Python
