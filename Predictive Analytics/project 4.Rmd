@@ -1,0 +1,226 @@
+---
+title: "apa"
+author: "Yiyi Song, Yi Lin, Jingwen Liu, Zhongzhong Qian"
+date: "March 21, 2018"
+output: html_document
+---
+```{r}
+suppressPackageStartupMessages(library(dplyr)) # for data manipulation
+suppressPackageStartupMessages(library(tidyr))
+suppressPackageStartupMessages(library(BTYDplus)) 
+suppressPackageStartupMessages(library(knitr)) 
+suppressPackageStartupMessages(library(ggplot2)) 
+options(digits=3) # don't print unnecessary decimal places
+```
+
+
+```{r}
+#read the data
+KB.file<-('KB_Tulsa.txt')
+KB<-read.table(KB.file,header=TRUE)
+
+#Divide the sample into a 20-week "calibration" set, and a 32-week "holdout" set
+KB_calib<- KB %>% filter(Week<=20)
+KB_hold<- KB %>% filter(Week>20)
+
+```
+#####(a)Estimate and describe the distribution of purchase rates using only the calibration data.
+
+```{r}
+#count for panelists who do not appear in the transaction record
+N0_calib<- 1300-length(unique(KB_calib$ID))
+no_pur_calib<-data.frame(x=0,N=N0_calib)
+
+#Summarize repeat purchase behavior for calibration sample
+calib <- KB_calib %>% 
+                group_by(ID) %>% 
+                summarise(x=n()) %>%
+                group_by(x)%>%
+                summarise(N=n())%>%
+                rbind(no_pur_calib) %>%
+                arrange(x)
+calib<-merge(data_frame(x=0:12), calib, by='x', all.x=TRUE)
+calib[is.na(calib)] <- 0
+
+# Build the NBD model
+log_NBD <- function(x,r,a,T){
+  lgamma(r+x)-lgamma(r)-lfactorial(x)+r*log(a)-r*log(a+T)+x*log(T)-x*log(a+T)
+}
+
+LL_NBD<-function(pars,N,x,T){
+  r<-exp(pars[1])
+  a<-exp(pars[2])
+  LL<- sum(N*log_NBD(x,r,a,T))
+  return(-LL)
+}
+
+MLE<-optim(c(0,0),fn=LL_NBD,N=calib$N,x=calib$x,T=20)
+
+r<-exp(MLE$par[1])
+
+a<-exp(MLE$par[2])
+
+LL<- -MLE$value
+
+mean<- r/a
+
+variance <-r/a^2
+
+```
+
+The model that is suitable for the calibration data is NBD model. Under the assumptions of the NBD model, the purchase rates in population vary according to a gamma(`r r`, `r a`) distribution. The expected purchase rate is `r mean`, and the variance is `r variance`
+
+
+#####(b)Using the parameter estimates from the calibration set, compare the predicted counts for both the calibration and holdout periods. That is, using the parameters estimated from the frst 20 weeks of data, predict for those same 20 weeks, and forecast for the next 32 weeks. Compare the predictions/forecasts with the observed data, and assess the model performance. Explain why the models perform as well as, or as poorly as, they do.
+
+For the calibration periods, the model fits pretty well. For the holdout periods, the model performs poorly, as it underestimates the value when the purchase x equals 0 and overestimates other situations. This may because this model overfitts in-sample data and chases some noises or because the model is not a good representation of the data-generating process.(Maybe the individual-level model is not possion distributed or the population-level model is not gamma distributed)
+
+```{r}
+# Predicts for calibration periods
+calib_predict <- calib %>% mutate(Predict=1300*exp(log_NBD(calib$x,r,a,20)))
+
+#Display the table
+kable(calib_predict , digits=2, align=c('c','c'))
+
+# Manipulate the data to be plotted
+calib_plot<- calib_predict %>% 
+             gather(Compare,Value,-x)
+# Plot the data
+ggplot(calib_plot,aes(x=x,y=Value,fill=Compare))+
+  geom_bar(position = 'dodge',stat="identity")+
+  labs(x="Purchases",y="Panelists")+
+  ggtitle("Compare the predicted counts for the calibration periods")
+
+
+```
+
+
+```{r}
+#Summarize repeat purchase behavior for holdout sample
+N0_hold<- 1300-length(unique(KB_hold$ID))
+no_pur_hold<-data.frame(x=0,N=N0_hold)
+hold <- KB_hold %>% 
+                group_by(ID) %>% 
+                summarise(x=n()) %>%
+                group_by(x)%>%
+                summarise(N=n())%>%
+                rbind(no_pur_hold) %>%
+                arrange(x)
+
+hold<-merge(data_frame(x=0:12), hold, by='x', all.x=TRUE)
+hold[is.na(hold)] <- 0
+
+hold_predict <- hold %>% mutate(Predict=1300*exp(log_NBD(hold$x,r,a,32)))
+kable(hold_predict , digits=2, align=c('c','c'))
+
+# Manipulate the data to be plotted
+hold_plot<- hold_predict %>% 
+             gather(Compare,Value,-x)
+# Plot the data
+ggplot(hold_plot,aes(x=x,y=Value,fill=Compare))+
+  geom_bar(position = 'dodge',stat="identity")+
+  labs(x="Purchases",y="Panelists")+
+  ggtitle("Compare the predicted counts for the holdout periods")
+
+```
+
+#####(c)Using the same model that you used in part 2a, estimate and describe the distribution of purchase rates using only the data in the holdout sample. Compare and contrast the estimated distribution with the one from part 2a.
+
+```{r}
+#Estimate the parameter for NBD model with holdout sample
+MLE<-optim(c(0,0),fn=LL_NBD,N=hold$N,x=hold$x,T=32)
+
+r_hold<-exp(MLE$par[1])
+
+a_hold<-exp(MLE$par[2])
+
+LL_hold<- -MLE$value
+
+mean_hold<-r_hold/a_hold
+
+variance_hold<-r_hold/a_hold^2
+
+```
+
+Under the assumptions of the NBD model, the purchase rates in population vary according to a gamma(`r r_hold`, `r a_hold`) distribution. The expected purchase rate is `r mean_hold`, and the variance is `r variance_hold`. Compared with the model in 2a, this model has a lower mean purchase rate and lower variance.
+
+
+#####(d)Given your answers to the preceding parts, give an overall, intuitive explanation of di???erences between the calibration and holdout periods. How might you refine your model to account for the di???erences?
+
+Explanation:Customer's lifetime is unobserved and customer may drop out at some time. Besides, the durations of the calibration and holdout periods are different.
+
+Refine: The model should take the churn rate into consideration and make the units of measure for all of the quantities the same.
+
+#####(a) Using these parameter estimates, what is the probability that a randomly chosen person makes his or her initial purchase within the frst year (by the end of week 52)?
+ 
+```{r}
+r<-0.045
+a<-6.764
+
+EG<- function(r,a,T){
+  1-(a/(a+T))^r
+}
+
+purchase_in_a_year<- EG(r,a,T=52)
+```
+
+The probability that a randomly chosen person makes his or her initial purchase within the frst year is `r purchase_in_a_year`
+
+
+#####(b) What is the probability that someone who has not yet purchased Krunchy Bits by the end of the frst year would make his initial purchase by the end of year 2 (week 104)? (Note: there are two ways you could approach this problem, one of which involves deriving a Bayes update. No integration is necessary).
+
+
+```{r}
+#P(T<=104|T>52) = 1- P(T>104|T>52) = 1- P(T>104)* P(T>52|T>104)/ P(T>52)
+
+conditional_purchase<- 1-((1- EG(r,a,T=104))*1/(1-EG(r,a,T=52)))
+
+```
+
+The probability that someone who has not yet purchased Krunchy Bits by the end of the frst year would make his initial purchase by the end of year 2 is `r conditional_purchase`
+
+####(c) Are your answers to parts 3a and 3b the same, or di???erent? Give an intuitive explanation of why.
+
+They are different. Because for people that have not purchased Krunchy Bits for 52 weeks, it is less likely that they will try it in the future.
+
+
+
+#####(d)Suppose I estimated a Weibull-gamma model instead. How do you think your answer to part 3b might change in the presence of positive(c>1) or negative(c<1) dependence. You may assume that the estimates for r and a do not change
+
+If c>1, there is increasing duration dependence, the purchase rate will be increasing with time. So the answer to 3b will be higher. If c<1, there is decreasing duration dependence, the purchase rate will be decreasing with time. So the answer to 3b will be lower.
+
+
+#####(e)After estimating exponential never-triers (E-NT) model on the frst 24 weeks of data, the estimates were lamda= 0.066 and p=0.085 (where p is the probability of being an ever-trier). Using these estimates, we estimate the probability that a member of the population who has not yet tried Krunchy Bits by Week 24 is a "never-trier."
+
+
+```{r}
+ED<- function(lamda,t){
+  1-exp(-lamda*t)
+}
+
+lamda<-0.066
+p<-0.085
+t<-24
+
+# P(NT|x=0) = p(NT)*p(x=0|NT)/p(X=0)
+
+p_NT<- (1-p)/((1-p)+p*(1-ED(lamda,t)))
+
+```
+
+The probability that a member of the population who has not yet tried Krunchy Bits by Week 24 is a "never-trier" is `r p_NT`
+
+#####(f)Q: When estimateing an exponential-gamma-never-triers (EG-NT) model, we were given parameter estimates of p=0.086, r=77, 624 and a= 1, 185, 146. why the estimates of r and a are so large? Is it possible that there is a mistake within the model? How should I proceed?
+
+
+```{r}
+r<-77624
+a<- 1185146
+
+mean_EGNT<- r/a
+
+variance_EGNT<- r/a^2
+
+```
+
+The mean of population trial rate lamda is `r mean_EGNT`, no big difference from the E-NT model. Parameter a controls the "spread" of the distribution. Due to the large value of a, r is correspondingly large, and the variance is `r variance_EGNT`, which means there is basically no heterogeneity in lamda and the population have the same lamda as is in the E-NT model. There is no mistake in the model. We should use the E-NT model instead of the EG-NT model.
