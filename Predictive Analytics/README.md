@@ -4,7 +4,7 @@ Ace Snackfoods wanted to know 1) how likely a randomly chosen person makes his o
 
 To approach this problem, my team decided to divide the sample into a 20-week “calibration” set, and a 32-week “holdout” set. First we estimated and described the distribution of purchase rates using only the calibration data. We summarized the counts for each panelist during the calibration and holdout periods. Anyone that does not appear in the transaction record is a “zero,” and needed to be included.
 
-![alt text](https://raw.githubusercontent.com/jingwen-liu/SMU-Projects/Predictive Analytics/1.png) 
+![alt text](https://github.com/jingwen-liu/SMU-Projects/blob/master/Predictive%20Analytics/1.png)
 
 Then we used the parameter estimates from the calibration set and compared the predicted counts for both the calibration and holdout periods. In other words, we used the parameters estimated from the first 20 weeks of data to predict for those same 20 weeks, and then forecasted for the next 32 weeks. After examining the results, we concluded that for the calibration periods, the model fits pretty well. For the holdout periods, however, the model performs poorly, as it underestimated the value when the purchase x equals 0 and overestimates other situations. This may because this model overfitts in-sample data and chases some noises or because the model is not a good representation of the data-generating process.(Maybe the individual-level model is not possion distributed or the population-level model is not gamma distributed)
 
